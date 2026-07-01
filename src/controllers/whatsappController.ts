@@ -207,7 +207,11 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
       Promise.allSettled(adminList.map(admin => {
         if (admin.phone) {
           return sendWhatsAppTemplate(admin.phone, "utl_clarity_admin_notify", "en", [
-            { type: "header", parameters: [{ type: "text", parameter_name: "name", text: "Admin" }] }
+            { type: "header", parameters: [{ type: "text", text: "Admin" }] },
+            { type: "body", parameters: [
+              { type: "text", text: profileName || "User" },
+              { type: "text", text: phone }
+            ]}
           ]);
         }
       })).catch(err => console.error("Failed to notify admins", err));
