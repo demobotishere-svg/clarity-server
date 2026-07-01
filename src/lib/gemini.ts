@@ -16,15 +16,6 @@ const EXPECTED_ANSWERS = [
 ];
 
 export async function generateAssessmentReport(qaPairs: { question: string, answer: string }[], userName: string): Promise<{ score: number, summary: string, profession: string, reportMarkdown: string }> {
-  const apiKey = process.env.GEMINI_API_KEY || "";
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
-  
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
-    generationConfig: { maxOutputTokens: 1000 }
-  });
-
   const prompt = `
 You are an expert AI Strategist and Elite Sales Closer for "Clarity." a premium AI agency.
 A user named ${userName} has completed our 3-question AI readiness assessment.
@@ -61,11 +52,46 @@ Respond ONLY with a valid JSON object in this exact format (no markdown code blo
   "profession": "Real Estate Agent",
   "reportMarkdown": "The full markdown string here..."
 }
+}
 `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const responseText = (await result.response).text();
+    let responseText = "";
+
+    if (process.env.AI_PROVIDER === 'zhipu') {
+      const zhipuKey = process.env.ZHIPU_API_KEY;
+      if (!zhipuKey) throw new Error("ZHIPU_API_KEY is not set.");
+      
+      const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${zhipuKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "glm-4-flash",
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      
+      const data = await res.json();
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error(JSON.stringify(data));
+      }
+      responseText = data.choices[0].message.content;
+    } else {
+      // Default to Gemini
+      const apiKey = process.env.GEMINI_API_KEY || "";
+      if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        generationConfig: { maxOutputTokens: 1000 }
+      });
+      const result = await model.generateContent(prompt);
+      responseText = (await result.response).text();
+    }
+
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -84,15 +110,6 @@ Respond ONLY with a valid JSON object in this exact format (no markdown code blo
 }
 
 export async function validateAnswer(question: string, answer: string): Promise<{isValid: boolean; feedback: string}> {
-  const apiKey = process.env.GEMINI_API_KEY || "";
-  if (!apiKey) return { isValid: true, feedback: "" }; // fallback to accept if no API key
-  
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
-    generationConfig: { maxOutputTokens: 300 }
-  });
-
   const prompt = `
 You are the friendly, professional AI Assistant for "Clarity". 
 You are currently guiding a user through a 3-question AI strategy assessment on WhatsApp.
@@ -118,8 +135,43 @@ Respond ONLY with a valid JSON object (no markdown formatting around it):
 `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const responseText = (await result.response).text();
+    let responseText = "";
+
+    if (process.env.AI_PROVIDER === 'zhipu') {
+      const zhipuKey = process.env.ZHIPU_API_KEY;
+      if (!zhipuKey) return { isValid: true, feedback: "" };
+      
+      const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${zhipuKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "glm-4-flash",
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      
+      const data = await res.json();
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error(JSON.stringify(data));
+      }
+      responseText = data.choices[0].message.content;
+    } else {
+      // Default to Gemini
+      const apiKey = process.env.GEMINI_API_KEY || "";
+      if (!apiKey) return { isValid: true, feedback: "" }; // fallback
+      
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        generationConfig: { maxOutputTokens: 300 }
+      });
+      const result = await model.generateContent(prompt);
+      responseText = (await result.response).text();
+    }
+
     // parse the JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
