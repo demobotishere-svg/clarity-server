@@ -36,14 +36,16 @@ Your task is to generate FOUR things:
 4. A highly persuasive, highly professional PDF report (in Markdown).
 
 REPORT REQUIREMENTS:
-- Structure the report with exactly two main sections: "Executive Summary" and "Strategic Recommendations".
-- The tone MUST be highly convincing, elevating their absolute *need* for AI. Make them realize that without AI, they will fall behind their competitors. 
-- Use psychological sales techniques: acknowledge their challenges, agitate the pain point slightly, and present "Clarity." as the ultimate, indispensable solution to their specific problems.
-- Emphasize that joining Clarity is the exact next step they MUST take to achieve their 3-month goals.
+- You must structure the report with exactly these 5 sections in order, using Markdown headings (##):
+  1. **My Points**: State their score clearly and give a complimentary remark (e.g., "Good", "Bad", "Excellent") based on their answers.
+  2. **Where I Need To Improve**: A concise bulleted list of weaknesses based on their answers.
+  3. **Reason For My Point**: A brief explanation of why they received their specific score (whether low, mid, or high).
+  4. **How Can I Improve**: A concise bulleted list of actionable improvements.
+  5. **How Clarity Helps Me**: A bulleted list explaining exactly how the Clarity Masterclass will solve their problems.
+- Keep the entire report VERY CONCISE (maximum 300 words total) so it fits beautifully on 1-2 pages when converted to PDF.
 - Use **bold text** to highlight key terms and impacts.
-- Greet the user by their name (e.g. "Hello ${userName}! 👋").
-- Sign off at the very end with exactly:
-<br/>Best regards,<br/>**Clarity.**
+- Greet the user by their name at the very beginning (e.g. "Hello ${userName}! 👋").
+- Do NOT add a sign-off or "Best regards" at the end, as the PDF template already handles the footer and Call To Action button automatically.
 
 Respond ONLY with a valid JSON object in this exact format (no markdown code blocks, just raw JSON):
 {
@@ -57,40 +59,16 @@ Respond ONLY with a valid JSON object in this exact format (no markdown code blo
 
   try {
     let responseText = "";
-
-    if (process.env.AI_PROVIDER === 'zhipu') {
-      const zhipuKey = process.env.ZHIPU_API_KEY;
-      if (!zhipuKey) throw new Error("ZHIPU_API_KEY is not set.");
-      
-      const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${zhipuKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "glm-4-flash",
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      
-      const data = await res.json();
-      if (!data.choices || data.choices.length === 0) {
-        throw new Error(JSON.stringify(data));
-      }
-      responseText = data.choices[0].message.content;
-    } else {
-      // Default to Gemini
-      const apiKey = process.env.GEMINI_API_KEY || "";
+    
+    const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        generationConfig: { maxOutputTokens: 1000 }
-      });
-      const result = await model.generateContent(prompt);
-      responseText = (await result.response).text();
-    }
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-3.1-flash-lite",
+      generationConfig: { maxOutputTokens: 1000 }
+    });
+    const result = await model.generateContent(prompt);
+    responseText = (await result.response).text();
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -137,40 +115,16 @@ Respond ONLY with a valid JSON object (no markdown formatting around it):
   try {
     let responseText = "";
 
-    if (process.env.AI_PROVIDER === 'zhipu') {
-      const zhipuKey = process.env.ZHIPU_API_KEY;
-      if (!zhipuKey) return { isValid: true, feedback: "" };
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    if (!apiKey) return { isValid: true, feedback: "" }; // fallback
       
-      const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${zhipuKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "glm-4-flash",
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      
-      const data = await res.json();
-      if (!data.choices || data.choices.length === 0) {
-        throw new Error(JSON.stringify(data));
-      }
-      responseText = data.choices[0].message.content;
-    } else {
-      // Default to Gemini
-      const apiKey = process.env.GEMINI_API_KEY || "";
-      if (!apiKey) return { isValid: true, feedback: "" }; // fallback
-      
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        generationConfig: { maxOutputTokens: 300 }
-      });
-      const result = await model.generateContent(prompt);
-      responseText = (await result.response).text();
-    }
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-3.1-flash-lite",
+      generationConfig: { maxOutputTokens: 300 }
+    });
+    const result = await model.generateContent(prompt);
+    responseText = (await result.response).text();
 
     // parse the JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);

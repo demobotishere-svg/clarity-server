@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import path from "path";
 
 import authRoutes from "./routes/authRoutes";
 import adminRoutes from "./routes/adminRoutes";
@@ -36,6 +37,9 @@ app.use("/api", apiLimiter); // Apply general limit to all API routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
+// Serve PDF reports statically so WhatsApp Cloud API can download them
+app.use("/reports", express.static(path.join(process.cwd(), "public", "reports")));
 
 // Register routes
 app.use("/api/auth", authRoutes);

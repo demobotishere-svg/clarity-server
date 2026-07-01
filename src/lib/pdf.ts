@@ -3,6 +3,10 @@ import path from 'path';
 import puppeteer from 'puppeteer';
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
+import pLimit from 'p-limit';
+
+// Limit PDF generation to 3 concurrent instances server-wide to prevent OOM crashes
+const pdfQueue = pLimit(3);
 
 function parseMarkdown(text: string): string {
   // Parse markdown and strictly sanitize the resulting HTML to prevent XSS
@@ -199,35 +203,37 @@ export async function generateReportPDF(
 </html>
   `;
 
-  // Launch Puppeteer
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-  
-  const page = await browser.newPage();
-  await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-  
-  try {
-    // Generate PDF with a strict 15-second timeout
-    await page.pdf({
-      path: filePath,
-      format: 'A4',
-      printBackground: true,
-      timeout: 15000,
-      margin: {
-        top: '60px',
-        right: '60px',
-        bottom: '60px',
-        left: '60px'
-      }
+  return pdfQueue(async () => {
+    // Launch Puppeteer
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
-  } catch (error) {
-    console.error("PDF Generation timed out or failed:", error);
-    throw new Error("Failed to generate PDF document.");
-  } finally {
-    await browser.close();
-  }
+    
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+    
+    try {
+      // Generate PDF with a strict 15-second timeout
+      await page.pdf({
+        path: filePath,
+        format: 'A4',
+        printBackground: true,
+        timeout: 15000,
+        margin: {
+          top: '60px',
+          right: '60px',
+          bottom: '60px',
+          left: '60px'
+        }
+      });
+    } catch (error) {
+      console.error("PDF Generation timed out or failed:", error);
+      throw new Error("Failed to generate PDF document.");
+    } finally {
+      await browser.close();
+    }
 
-  return fileName;
+    return fileName;
+  });
 }

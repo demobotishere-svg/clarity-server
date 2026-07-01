@@ -36,25 +36,44 @@ export const processQueue = async (req: Request, res: Response) => {
     let processedCount = 0;
 
     for (const msg of pendingList) {
-      const leadResults = await db.select({ phone: leads.phone, name: leads.name }).from(leads).where(eq(leads.id, msg.leadId));
+      const leadResults = await db.select({ 
+        phone: leads.phone, 
+        name: leads.name, 
+        isSubscribed: leads.isSubscribed,
+        paymentLink: leads.paymentLink
+      }).from(leads).where(eq(leads.id, msg.leadId));
       
       let finalStatus = "FAILED";
       let errorReason = "Lead not found or missing phone";
       let wamid = null;
 
       if (leadResults.length > 0) {
-        const phone = leadResults[0].phone;
-        const name = leadResults[0].name;
+        const lead = leadResults[0];
         
-        try {
-          const resData = await sendWhatsAppTemplate(phone, msg.templateName, "en", [
-            {
-              type: "header",
-              parameters: [
-                { type: "text", parameter_name: "name", text: name || "User" }
-              ]
+        if (lead.isSubscribed === false) {
+          finalStatus = "FAILED";
+          errorReason = "User has unsubscribed";
+        } else if (lead.phone) {
+          try {
+            let components: any[] = [];
+            
+            if (msg.templateName === "utl_payment_abandoned") {
+              const paymentLinkUrl = lead.paymentLink || process.env.RAZORPAY_PAYMENT_LINK || "https://rzp.io/rzp/XW1Jd0p";
+              components = [
+                { type: "header", parameters: [{ type: "text", parameter_name: "name", text: lead.name || "User" }] },
+                { type: "body", parameters: [{ type: "text", parameter_name: "paymentlink", text: paymentLinkUrl }] }
+              ];
+            } else if (msg.templateName === "utl_assessment_abandoned") {
+              components = [
+                { type: "header", parameters: [{ type: "text", parameter_name: "name", text: lead.name || "User" }] }
+              ];
+            } else {
+              components = [
+                { type: "header", parameters: [{ type: "text", parameter_name: "name", text: lead.name || "User" }] }
+              ];
             }
-          ]);
+
+            const resData = await sendWhatsAppTemplate(lead.phone, msg.templateName, "en", components);
           
           if (resData?.messages?.[0]?.id) {
             wamid = resData.messages[0].id;
@@ -67,8 +86,9 @@ export const processQueue = async (req: Request, res: Response) => {
           errorReason = err.message || "WhatsApp API Error";
         }
       }
+    }
 
-      await db.update(pendingMessages)
+    await db.update(pendingMessages)
           .set({ 
             status: finalStatus, 
             errorReason: errorReason,

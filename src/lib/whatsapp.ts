@@ -58,6 +58,8 @@ export async function sendWhatsAppTemplate(to: string, templateName: string, lan
     if (components && components.length > 0) {
       payload.template.components = components;
     }
+    
+    console.log(`[Webhook] Sending template ${templateName} to ${to} with payload:`, JSON.stringify(payload, null, 2));
 
     const res = await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
       method: "POST",

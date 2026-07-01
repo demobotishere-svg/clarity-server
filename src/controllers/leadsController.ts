@@ -84,6 +84,13 @@ export const createLead = async (req: Request, res: Response) => {
               parameters: [
                 { type: "text", parameter_name: "name", text: "Admin" }
               ]
+            },
+            {
+              type: "body",
+              parameters: [
+                { type: "text", parameter_name: "username", text: name || "User" },
+                { type: "text", parameter_name: "userphonenumber", text: formattedPhone }
+              ]
             }
           ]);
         }

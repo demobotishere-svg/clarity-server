@@ -24,6 +24,8 @@ export const leads = pgTable("Lead", {
   updatedAt: timestamp("updatedAt", { precision: 3, mode: "date" }).notNull(),
   hasPaid: boolean("hasPaid").default(false),
   paymentId: text("paymentId"),
+  paymentLink: text("paymentLink"),
+  isSubscribed: boolean("isSubscribed").default(true),
 });
 
 // Assessments Table

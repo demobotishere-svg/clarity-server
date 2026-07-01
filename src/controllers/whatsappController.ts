@@ -6,6 +6,9 @@ import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { sendWhatsAppMessage } from "../lib/whatsapp";
 import { generateAssessmentReport, validateAnswer } from "../lib/gemini";
 import { checkRateLimit } from "../lib/rateLimit";
+import pLimit from "p-limit";
+
+const userQueues = new Map<string, any>();
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET;
@@ -144,9 +147,23 @@ export const handleWebhook = async (req: Request, res: Response) => {
     const protocol = req.headers["x-forwarded-proto"] || "https";
     const baseUrl = `${protocol}://${host}`;
 
-    await handleIncomingMessage(phone, text, baseUrl, profileName);
+    // Acknowledge immediately to prevent Meta Webhook timeouts
+    res.status(200).send("OK");
 
-    return res.status(200).send("OK");
+    // Get or create queue for this user
+    if (!userQueues.has(phone)) {
+      userQueues.set(phone, pLimit(1));
+    }
+    const userQueue = userQueues.get(phone);
+
+    // Process asynchronously through their personal queue
+    userQueue(async () => {
+      try {
+        await handleIncomingMessage(phone, text, baseUrl, profileName);
+      } catch (error) {
+        console.error(`Async Incoming Message Error for ${phone}:`, error);
+      }
+    });
   } catch (error: any) {
     console.error("Webhook Error:", error);
     return res.status(500).send(`Error: ${error.stack || error.message || String(error)}`);
@@ -207,10 +224,10 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
       Promise.allSettled(adminList.map(admin => {
         if (admin.phone) {
           return sendWhatsAppTemplate(admin.phone, "utl_clarity_admin_notify", "en", [
-            { type: "header", parameters: [{ type: "text", text: "Admin" }] },
+            { type: "header", parameters: [{ type: "text", parameter_name: "name", text: "Admin" }] },
             { type: "body", parameters: [
-              { type: "text", text: profileName || "User" },
-              { type: "text", text: phone }
+              { type: "text", parameter_name: "username", text: profileName || "User" },
+              { type: "text", parameter_name: "userphonenumber", text: phone }
             ]}
           ]);
         }
@@ -228,6 +245,19 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
     action: "WEBHOOK_RECEIVED",
     details: JSON.stringify({ messageType: "text", length: text.length })
   });
+
+  const { sendWhatsAppMessage } = await import("../lib/whatsapp");
+
+  if (text.trim().toUpperCase() === "STOP") {
+    await db.update(leads).set({ isSubscribed: false }).where(eq(leads.id, lead.id));
+    await sendWhatsAppMessage(phone, "You have been successfully unsubscribed. You will no longer receive automated messages from us.");
+    return;
+  }
+
+  // If they were unsubscribed but sent a regular message, opt them back in
+  if (lead.isSubscribed === false) {
+    await db.update(leads).set({ isSubscribed: true }).where(eq(leads.id, lead.id));
+  }
 
   const assessment = lead.assessment;
 
@@ -258,7 +288,7 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
       const fifthMsgTime = new Date(recentMessages[4].createdAt).getTime();
       const timeSinceFifthMsg = Date.now() - fifthMsgTime;
       
-      if (timeSinceFifthMsg < 60000) {
+      if (timeSinceFifthMsg >= 0 && timeSinceFifthMsg < 60000) {
         console.warn(`[Webhook] Rate limit exceeded for ${phone}. Dropping message.`);
         await sendWhatsAppMessage(phone, "You are sending messages too quickly. Please wait a moment and try again.");
         return;
@@ -399,6 +429,7 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
 
           if (paymentLink.short_url) {
             paymentLinkUrl = paymentLink.short_url;
+            await db.update(leads).set({ paymentLink: paymentLinkUrl }).where(eq(leads.id, lead.id));
           }
         } catch (error) {
           console.error("Failed to generate dynamic Razorpay link:", error);
@@ -407,8 +438,16 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
 
       const { generateReportPDF } = await import("../lib/pdf");
       const uniqueId = `${assessment.id}_${Date.now()}`;
-      const pdfFileName = await generateReportPDF(uniqueId, lead.name, qaPairs, reportMarkdown, score, paymentLinkUrl);
-      const pdfUrl = `${baseUrl}/reports/${pdfFileName}`;
+      
+      let pdfFileName = "";
+      let pdfUrl = "";
+      try {
+        pdfFileName = await generateReportPDF(uniqueId, lead.name, qaPairs, reportMarkdown, score, paymentLinkUrl);
+        pdfUrl = `${baseUrl}/reports/${pdfFileName}`;
+      } catch (error) {
+        console.error("PDF generation failed in whatsappController:", error);
+        // Save the assessment anyway but leave pdfUrl blank
+      }
 
       await db.update(assessments)
         .set({
@@ -425,13 +464,16 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
         id: generateId(),
         leadId: lead.id,
         action: "REPORT_GENERATED",
-        details: JSON.stringify({ score, pdfGenerated: true })
+        details: JSON.stringify({ score, pdfGenerated: !!pdfUrl })
       });
 
-      await sendSystemMessage(phone, assessment.id, `*Assessment Complete!*\n\nWe have analyzed your inputs. You scored an AI Readiness Rating of *${score}/100*.\n\nPlease find your detailed strategic analysis and personalized recommendations in the PDF below.\n\nReady to scale your business? *Join Clarity Now:* ${paymentLinkUrl}`);
-
-      const { sendWhatsAppDocument } = await import("../lib/whatsapp");
-      await sendWhatsAppDocument(phone, pdfUrl, `${lead.name}_Analysis.pdf`, "Your AI Strategy Report");
+      if (pdfUrl) {
+        await sendSystemMessage(phone, assessment.id, `*Assessment Complete!*\n\nWe have analyzed your inputs. You scored an AI Readiness Rating of *${score}/100*.\n\nPlease find your detailed strategic analysis and personalized recommendations in the PDF below.\n\nReady to scale your business? *Join Clarity Now:* ${paymentLinkUrl}`);
+        const { sendWhatsAppDocument } = await import("../lib/whatsapp");
+        await sendWhatsAppDocument(phone, pdfUrl, `${lead.name}_Analysis.pdf`, "Your AI Strategy Report");
+      } else {
+        await sendWhatsAppMessage(phone, "Oops! Your report was so packed with insights that our PDF engine timed out. Type 'Retry' to generate it again!");
+      }
 
       await db.insert(activityLogs).values({
         id: generateId(),
