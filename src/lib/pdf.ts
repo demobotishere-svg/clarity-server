@@ -71,10 +71,11 @@ export async function generateReportPDF(
     .hero-section {
       text-align: center;
       margin-bottom: 50px;
-      padding: 40px 20px;
-      background: #f8fafc;
-      border-radius: 12px;
+      padding: 50px 20px;
+      background: linear-gradient(135deg, #f8fafc 0%, #eef2f6 100%);
+      border-radius: 16px;
       border: 1px solid #e2e8f0;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
     }
     .title {
       font-size: 32px;
@@ -91,13 +92,13 @@ export async function generateReportPDF(
     }
     .score-badge {
       display: inline-block;
-      background: #1e40af;
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
       color: white;
-      padding: 12px 24px;
-      border-radius: 30px;
-      font-size: 20px;
-      font-weight: 700;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      padding: 14px 28px;
+      border-radius: 40px;
+      font-size: 22px;
+      font-weight: 800;
+      box-shadow: 0 8px 15px -3px rgba(37, 99, 235, 0.3);
     }
     .score-text {
       font-size: 14px;
@@ -146,15 +147,16 @@ export async function generateReportPDF(
     }
     .cta-btn {
       display: inline-block;
-      background: #2563eb;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
       color: #ffffff;
-      padding: 16px 40px;
-      border-radius: 8px;
+      padding: 18px 48px;
+      border-radius: 50px;
       font-size: 20px;
-      font-weight: 700;
+      font-weight: 800;
+      letter-spacing: 0.5px;
       text-decoration: none;
-      box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.39);
-      transition: all 0.2s ease;
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4);
+      border: 2px solid #60a5fa;
     }
     .footer {
       margin-top: 40px;
@@ -191,8 +193,8 @@ export async function generateReportPDF(
     </div>
 
     <div class="cta-container">
-      <div style="font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 16px;">Ready to transform your business?</div>
-      <a href="${paymentLinkUrl}" class="cta-btn">Join Clarity Masterclass Now</a>
+      <div style="font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 20px;">Ready to skyrocket your growth?</div>
+      <a href="${paymentLinkUrl}" class="cta-btn">JOIN CLARITY MASTERCLASS NOW</a>
     </div>
 
     <div class="footer">
@@ -211,7 +213,7 @@ export async function generateReportPDF(
     });
     
     const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     
     try {
       // Generate PDF with a strict 15-second timeout

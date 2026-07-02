@@ -15,6 +15,11 @@ const envSchema = z.object({
   CRON_SECRET: z.string().min(1, "CRON_SECRET is required for internal triggers"),
   PORT: z.string().optional().default("3001"),
   FRONTEND_URL: z.string().optional(),
+  REDIS_HOST: z.string().min(1, "REDIS_HOST is required"),
+  REDIS_PORT: z.string().transform((val) => parseInt(val, 10)),
+  REDIS_USERNAME: z.string().optional().default("default"),
+  REDIS_PASSWORD: z.string().min(1, "REDIS_PASSWORD is required"),
+  REDIS_DB: z.string().optional().default("0").transform((val) => parseInt(val, 10)),
 });
 
 export const env = envSchema.safeParse(process.env);

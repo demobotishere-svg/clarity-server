@@ -218,23 +218,7 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
     await sendSystemMessage(phone, newAssessment.id, `Hi ${profileName}! Welcome to the Clarity Assessment. Let's get started!`);
     await sendSystemMessage(phone, newAssessment.id, QUESTIONS[0]);
 
-    try {
-      const { sendWhatsAppTemplate } = await import("../lib/whatsapp");
-      const adminList = await db.select().from(admins).where(isNotNull(admins.phone));
-      Promise.allSettled(adminList.map(admin => {
-        if (admin.phone) {
-          return sendWhatsAppTemplate(admin.phone, "utl_clarity_admin_notify", "en", [
-            { type: "header", parameters: [{ type: "text", parameter_name: "name", text: "Admin" }] },
-            { type: "body", parameters: [
-              { type: "text", parameter_name: "username", text: profileName || "User" },
-              { type: "text", parameter_name: "userphonenumber", text: phone }
-            ]}
-          ]);
-        }
-      })).catch(err => console.error("Failed to notify admins", err));
-    } catch(e) {
-      console.error("Error fetching admins for notification", e);
-    }
+
 
     return;
   }
@@ -436,50 +420,30 @@ async function handleIncomingMessage(phone: string, text: string, baseUrl: strin
         }
       }
 
-      const { generateReportPDF } = await import("../lib/pdf");
-      const uniqueId = `${assessment.id}_${Date.now()}`;
-      
-      let pdfFileName = "";
-      let pdfUrl = "";
-      try {
-        pdfFileName = await generateReportPDF(uniqueId, lead.name, qaPairs, reportMarkdown, score, paymentLinkUrl);
-        pdfUrl = `${baseUrl}/reports/${pdfFileName}`;
-      } catch (error) {
-        console.error("PDF generation failed in whatsappController:", error);
-        // Save the assessment anyway but leave pdfUrl blank
-      }
-
       await db.update(assessments)
         .set({
           score: score,
           summary: summary,
           profession: profession,
           report: reportMarkdown,
-          pdfUrl: pdfUrl,
           updatedAt: new Date()
         })
         .where(eq(assessments.id, assessment.id));
 
-      await db.insert(activityLogs).values({
-        id: generateId(),
-        leadId: lead.id,
-        action: "REPORT_GENERATED",
-        details: JSON.stringify({ score, pdfGenerated: !!pdfUrl })
-      });
-
-      if (pdfUrl) {
-        await sendSystemMessage(phone, assessment.id, `*Assessment Complete!*\n\nWe have analyzed your inputs. You scored an AI Readiness Rating of *${score}/100*.\n\nPlease find your detailed strategic analysis and personalized recommendations in the PDF below.\n\nReady to scale your business? *Join Clarity Now:* ${paymentLinkUrl}`);
-        const { sendWhatsAppDocument } = await import("../lib/whatsapp");
-        await sendWhatsAppDocument(phone, pdfUrl, `${lead.name}_Analysis.pdf`, "Your AI Strategy Report");
-      } else {
-        await sendWhatsAppMessage(phone, "Oops! Your report was so packed with insights that our PDF engine timed out. Type 'Retry' to generate it again!");
-      }
-
-      await db.insert(activityLogs).values({
-        id: generateId(),
-        leadId: lead.id,
-        action: "PDF_SENT_TO_WHATSAPP",
-        details: JSON.stringify({ success: true })
+      // Push to BullMQ for PDF Generation
+      const { pdfQueue } = await import("../queues/queue");
+      const uniqueId = `${assessment.id}_${Date.now()}`;
+      await pdfQueue.add("generate-pdf", {
+        uniqueId,
+        leadName: lead.name,
+        qaPairs,
+        reportMarkdown,
+        score,
+        paymentLinkUrl,
+        baseUrl,
+        phone,
+        assessmentId: assessment.id,
+        leadId: lead.id
       });
     }
   }

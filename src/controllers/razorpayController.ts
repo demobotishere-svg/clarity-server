@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { db, generateId } from "../lib/db";
-import { leads, activityLogs, messages as messagesTable, razorpayPayments } from "../db/schema";
-import { ilike, eq } from "drizzle-orm";
+import { leads, activityLogs, messages as messagesTable, razorpayPayments, admins } from "../db/schema";
+import { ilike, eq, isNotNull } from "drizzle-orm";
 import { sendWhatsAppTemplate } from "../lib/whatsapp";
 
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -135,7 +135,74 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
          });
       }
 
+      try {
+        const adminList = await db.select().from(admins).where(isNotNull(admins.phone));
+        Promise.allSettled(adminList.map(admin => {
+          if (admin.phone) {
+            return sendWhatsAppTemplate(admin.phone, "utl_clarity_admin_notify", "en", [
+              { type: "header", parameters: [{ type: "text", parameter_name: "name", text: "Admin" }] },
+              { type: "body", parameters: [
+                { type: "text", parameter_name: "username", text: lead.name || "User" },
+                { type: "text", parameter_name: "userphonenumber", text: lead.phone }
+              ]}
+            ]);
+          }
+        })).catch(err => console.error("Failed to notify admins of payment", err));
+      } catch(e) {
+        console.error("Error fetching admins for payment notification", e);
+      }
+
       console.log(`Successfully processed payment for ${lead.phone}`);
+    } else if (payload.event === "payment.failed") {
+      const paymentEntity = payload.payload.payment?.entity;
+      
+      const serviceFromNotes = paymentEntity?.notes?.service;
+      if (serviceFromNotes !== "clarity app") {
+        console.warn(`Razorpay Webhook: Ignored failed payment for different service (${serviceFromNotes || 'unknown'})`);
+        return res.status(200).send("OK");
+      }
+      
+      const exactLeadId = paymentEntity?.notes?.leadId || paymentEntity?.reference_id;
+      let lead: any = null;
+
+      if (exactLeadId) {
+        lead = await db.query.leads.findFirst({
+          where: eq(leads.id, exactLeadId),
+          with: { assessment: true }
+        });
+      }
+
+      if (!lead) {
+        const rawPhone = paymentEntity?.contact || paymentEntity?.customer?.contact;
+        if (rawPhone) {
+          let formattedPhone = String(rawPhone).replace(/[^0-9]/g, "");
+          const searchPhone = formattedPhone.length > 10 ? formattedPhone.slice(-10) : formattedPhone;
+          
+          lead = await db.query.leads.findFirst({
+            where: ilike(leads.phone, `%${searchPhone}%`),
+            with: { assessment: true }
+          });
+        }
+      }
+
+      if (lead) {
+        await db.insert(activityLogs).values({
+          id: generateId(),
+          leadId: lead.id,
+          action: "PAYMENT_FAILED",
+          details: JSON.stringify({ paymentId: paymentEntity?.id, amount: paymentEntity?.amount, event: payload.event })
+        });
+        
+        const paymentLinkUrl = lead.paymentLink || process.env.RAZORPAY_PAYMENT_LINK || "https://rzp.io/rzp/XW1Jd0p";
+        
+        const components = [
+          { type: "header", parameters: [{ type: "text", parameter_name: "name", text: lead.name || "User" }] },
+          { type: "body", parameters: [{ type: "text", parameter_name: "paymentlink", text: paymentLinkUrl }] }
+        ];
+
+        await sendWhatsAppTemplate(lead.phone, "utl_clarity_payment_failed", "en", components);
+        console.log(`Successfully processed failed payment webhook for ${lead.phone}`);
+      }
     }
 
     return res.status(200).send("OK");

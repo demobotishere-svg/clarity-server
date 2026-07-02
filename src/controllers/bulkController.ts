@@ -48,15 +48,6 @@ export const queueBulkMessages = async (req: Request, res: Response) => {
 
     await db.insert(pendingMessages).values(queueEntries);
 
-    // Auto-trigger cron
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-    const host = req.headers.host;
-    fetch(`${protocol}://${host}/api/cron/process-queue`, {
-      headers: {
-        "Authorization": `Bearer ${process.env.CRON_SECRET || ""}`
-      }
-    }).catch(err => console.error("Auto-process trigger failed:", err));
-
     return res.json({ success: true, batchId, queuedCount: validLeadIds.length });
   } catch (error) {
     console.error("Bulk Queue Error:", error);

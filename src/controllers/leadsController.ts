@@ -74,30 +74,7 @@ export const createLead = async (req: Request, res: Response) => {
       content: welcomeText,
     });
 
-    try {
-      const adminList = await db.select().from(admins).where(isNotNull(admins.phone));
-      Promise.allSettled(adminList.map(admin => {
-        if (admin.phone) {
-          return sendWhatsAppTemplate(admin.phone, "utl_clarity_admin_notify", "en", [
-            {
-              type: "header",
-              parameters: [
-                { type: "text", parameter_name: "name", text: "Admin" }
-              ]
-            },
-            {
-              type: "body",
-              parameters: [
-                { type: "text", parameter_name: "username", text: name || "User" },
-                { type: "text", parameter_name: "userphonenumber", text: formattedPhone }
-              ]
-            }
-          ]);
-        }
-      })).catch(err => console.error("Failed to notify admins", err));
-    } catch(e) {
-      console.error("Error fetching admins for notification", e);
-    }
+
 
     return res.json({ success: true, lead });
   } catch (error: any) {
